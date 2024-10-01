@@ -17,6 +17,8 @@ load_dotenv()
 def oauth_login(request):
     code = request.POST.get('code')
 
+    print(code)
+
     if code is None:
         return JsonResponse({'error': 'Échec : Code non fourni'}, status=400)
 
