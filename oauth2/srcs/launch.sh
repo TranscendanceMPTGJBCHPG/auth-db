@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-sleep 10
+sleep 20
 
 python manage.py makemigrations
 python manage.py migrate

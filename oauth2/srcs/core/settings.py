@@ -1,10 +1,11 @@
 import os
+import logging
 
 from pathlib import Path
 from dotenv import load_dotenv
 
-
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('BACKEND_SECRET_KEY')
@@ -90,7 +91,42 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173"
+    "http://localhost:7777"
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# LOGGING = {
+#     'version': 1,
+#     'disable_existing_loggers': False,
+#     'formatters': {
+#         'standard': {
+#             'format': '[%(asctime)s] [%(levelname)s] [%(name)s:%(lineno)s] %(message)s',
+#             'datefmt': '%Y-%m-%d %H:%M:%S'
+#         },
+#     },
+#     'handlers': {
+#         'console': {
+#             'class': 'logging.StreamHandler',
+#             'formatter': 'standard',
+#             'level': 'DEBUG',  # Important : mettre DEBUG ici
+#         },
+#     },
+#     'loggers': {
+#         '': {
+#             'handlers': ['console'],
+#             'level': 'DEBUG',
+#             'propagate': True,
+#         },
+#         'django': {
+#             'handlers': ['console'],
+#             'level': 'DEBUG',
+#             'propagate': False,
+#         },
+#         'oauth': {
+#             'handlers': ['console'],
+#             'level': 'DEBUG',
+#             'propagate': False,
+#         },
+#     },
+# }
