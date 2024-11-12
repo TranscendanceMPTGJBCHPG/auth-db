@@ -60,10 +60,10 @@ def oauth_login(request):
 
     token_data = {
         'grant_type': 'authorization_code',
-        'client_id': os.getenv('CLIENT_ID'),
-        'client_secret': os.getenv('CLIENT_SECRET'),
+        'client_id': os.getenv('VITE_CLIENT_ID'),
+        'client_secret': os.getenv('VITE_CLIENT_SECRET'),
         'code': code,
-        'redirect_uri': os.getenv('REDIRECT_URI'),
+        'redirect_uri': os.getenv('VITE_REDIRECT_URI'),
     }
 
     try:
