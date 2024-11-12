@@ -31,12 +31,12 @@ def generate_qr_code(username, secret):
         username,
         issuer_name="Transcendence"
     )
-    
+
     # Create QR code
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(provisioning_uri)
     qr.make(fit=True)
-    
+
     # Convert to image
     img_buffer = BytesIO()
     qr.make_image(fill_color="black", back_color="white").save(img_buffer, format='PNG')
@@ -53,7 +53,7 @@ def oauth_login(request):
     logger.info("Starting oauth_login request")
     code = request.POST.get('code')
     totp_token = request.POST.get('totp_token')  # 2FA token if provided
-    
+
     if code is None:
         logger.error("Failed: No authorization code provided")
         return JsonResponse({'error': 'Failed: No code provided'}, status=400)
@@ -118,7 +118,7 @@ def oauth_login(request):
             logger.info("Setting up new 2FA configuration")
             # Generate new TOTP secret
             new_totp_secret = generate_totp_secret()
-            
+
             # Create or update user profile
             if not hasattr(user, 'userprofile'):
                 logger.info("Creating new user profile with 2FA settings")
@@ -135,7 +135,7 @@ def oauth_login(request):
             # Generate QR code for Google Authenticator
             qr_code = generate_qr_code(user.username, new_totp_secret)
             logger.info("2FA QR code generated successfully")
-            
+
             return JsonResponse({
                 'status': 'setup_2fa',
                 'qr_code': qr_code,
@@ -147,6 +147,7 @@ def oauth_login(request):
             logger.info("2FA token required for existing user")
             return JsonResponse({
                 'status': 'need_2fa',
+                'qr_code': generate_qr_code(user.username, user.userprofile.totp_secret),
                 'message': 'Please provide a 2FA code'
             })
 
@@ -166,7 +167,7 @@ def oauth_login(request):
         SECRET_KEY = os.getenv('JWT_SECRET_KEY')
         now = datetime.now(pytz.utc)
         expiration_time = now + timedelta(days=1)
-        
+
         payload = {
             'username': user.username,
             'email': user.email,
@@ -174,11 +175,11 @@ def oauth_login(request):
             'image_link': user_json['image']['link'],
             'exp': int(expiration_time.timestamp())
         }
-        
+
         logger.debug(f"Prepared JWT payload: {payload}")
         encoded_jwt = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
         logger.info("JWT successfully generated after 2FA validation")
-        
+
         return JsonResponse({'access_token': encoded_jwt}, status=200)
 
     except requests.exceptions.RequestException as e:
