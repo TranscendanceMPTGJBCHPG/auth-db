@@ -51,8 +51,11 @@ def verify_totp(secret, token):
 @csrf_exempt
 def oauth_login(request):
     logger.info("Starting oauth_login request")
-    code = request.POST.get('code')
     totp_token = request.POST.get('totp_token')  # 2FA token if provided
+    code = request.POST.get('code')
+
+    logging.debug(f"Received 2FA token: {totp_token}")
+    logging.debug(f"Received code: {code}")
 
     if code is None:
         logger.error("Failed: No authorization code provided")
@@ -143,11 +146,10 @@ def oauth_login(request):
             })
 
         # Case 2: Existing user with 2FA already configured
-        if not totp_token:
+        if not totp_token or totp_token == '':
             logger.info("2FA token required for existing user")
             return JsonResponse({
                 'status': 'need_2fa',
-                'qr_code': generate_qr_code(user.username, user.userprofile.totp_secret),
                 'message': 'Please provide a 2FA code'
             })
 
@@ -155,7 +157,7 @@ def oauth_login(request):
         logger.info("Verifying 2FA token")
 
         if not verify_totp(totp_secret, totp_token):
-            logger.error("Failed: Invalid 2FA code")
+            logger.error("Failed: Invalid 2FA code :" + totp_token)
             return JsonResponse({
                 'error': 'Invalid 2FA code'
             }, status=400)
