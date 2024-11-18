@@ -1,11 +1,13 @@
 import os
 import jwt
 import pytz
+import uuid
 import pyotp
 import qrcode
 import base64
 import logging
 import requests
+import json
 
 from io import BytesIO
 from dotenv import load_dotenv
@@ -92,20 +94,22 @@ def oauth_login(request):
             defaults={'email': user_json['email']}
         )
 
-        # Generate a unique session token
-        oauth_session_token = secrets.token_urlsafe(32)
-        
-        # Store OAuth validation data in session with expiration
-        request.session[f'oauth_validated_{oauth_session_token}'] = {
+        # Prepare payload for JWT
+        jwt_payload = {
             'username': user.username,
             'email': user.email,
             'image_link': user_json['image']['link'],
             'timestamp': datetime.now(pytz.utc).timestamp(),
-            'validated': True
+            'validated': False,  # Will be validated after 2FA
+            'exp': datetime.now(pytz.utc) + timedelta(minutes=5)  # 5 minutes expiration
         }
         
-        # Set session expiration to 5 minutes
-        request.session.set_expiry(300)
+        # Generate JWT token
+        jwt_token = jwt.encode(
+            jwt_payload,
+            os.getenv('JWT_SECRET_KEY'),
+            algorithm='HS256'
+        )
 
         # Check 2FA status
         try:
@@ -128,8 +132,8 @@ def oauth_login(request):
             qr_code = generate_qr_code(user.username, new_totp_secret)
             return JsonResponse({
                 'status': 'setup_2fa',
+                'token': jwt_token,
                 'qr_code': qr_code,
-                'session_token': oauth_session_token,
                 'user_data': {
                     'username': user.username,
                     'email': user.email,
@@ -140,7 +144,7 @@ def oauth_login(request):
         # Existing user with 2FA
         return JsonResponse({
             'status': 'need_2fa',
-            'session_token': oauth_session_token,
+            'token': jwt_token,
             'user_data': {
                 'username': user.username,
                 'email': user.email,
@@ -158,32 +162,27 @@ def verify_2fa(request):
     logger.info("Starting 2FA verification")
     username = request.POST.get('username')
     totp_token = request.POST.get('totp_token')
-    oauth_session_token = request.POST.get('session_token')
+    temp_jwt = request.POST.get('token')
 
-    if not all([username, totp_token, oauth_session_token]):
+    if not all([username, totp_token, temp_jwt]):
         return JsonResponse({'error': 'Missing required parameters'}, status=400)
 
-    # Verify OAuth session
-    session_key = f'oauth_validated_{oauth_session_token}'
-    oauth_data = request.session.get(session_key)
-    
-    if not oauth_data or not oauth_data.get('validated'):
-        logger.error("No valid OAuth session found")
-        return JsonResponse({'error': 'Invalid session. Please authenticate through OAuth first'}, status=401)
-
-    # Verify username matches OAuth session
-    if oauth_data['username'] != username:
-        logger.error("Username mismatch with OAuth session")
-        return JsonResponse({'error': 'Invalid session data'}, status=401)
-
-    # Check session expiration (5 minutes)
-    session_timestamp = oauth_data.get('timestamp')
-    if not session_timestamp or (datetime.now(pytz.utc).timestamp() - session_timestamp) > 300:
-        # Clean up expired session
-        request.session.pop(session_key, None)
-        return JsonResponse({'error': 'Session expired. Please authenticate again'}, status=401)
-
     try:
+        # Verify temporary JWT
+        SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+        try:
+            jwt_data = jwt.decode(temp_jwt, SECRET_KEY, algorithms=['HS256'])
+        except jwt.ExpiredSignatureError:
+            return JsonResponse({'error': 'Token expired. Please authenticate again'}, status=401)
+        except jwt.InvalidTokenError:
+            return JsonResponse({'error': 'Invalid token'}, status=401)
+
+        # Verify username matches JWT data
+        if jwt_data['username'] != username:
+            logger.error("Username mismatch with JWT")
+            return JsonResponse({'error': 'Invalid token data'}, status=401)
+
+        # Verify 2FA
         user = User.objects.get(username=username)
         totp_secret = user.userprofile.totp_secret
 
@@ -191,11 +190,7 @@ def verify_2fa(request):
             logger.error(f"Invalid 2FA code: {totp_token}")
             return JsonResponse({'error': 'Invalid 2FA code'}, status=400)
 
-        # Clean up the session after successful verification
-        request.session.pop(session_key, None)
-
-        # Generate JWT
-        SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+        # Generate new long-term JWT
         now = datetime.now(pytz.utc)
         expiration_time = now + timedelta(days=1)
 
@@ -203,7 +198,7 @@ def verify_2fa(request):
             'username': user.username,
             'email': user.email,
             'game_access': 1,
-            'image_link': oauth_data['image_link'],
+            'image_link': jwt_data['image_link'],
             'exp': int(expiration_time.timestamp())
         }
 

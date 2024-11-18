@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('BACKEND_SECRET_KEY')
 DEBUG = False
-ALLOWED_HOSTS = ['0.0.0.0', 'localhost', 'postgres', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost']
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 INSTALLED_APPS = [
@@ -92,8 +92,12 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:7777"
+    "https://localhost:7777"
 ]
+
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # ou autre backend
+SESSION_COOKIE_SECURE = True  # Si HTTPS
+SESSION_COOKIE_HTTPONLY = True
 
 CORS_ALLOW_CREDENTIALS = True
 
