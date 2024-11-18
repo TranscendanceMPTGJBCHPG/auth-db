@@ -48,16 +48,12 @@ def verify_totp(secret, token):
     return totp.verify(token)
 
 @require_POST
-@csrf_exempt
+@csrf_exempt 
 def oauth_login(request):
     logger.info("Starting oauth_login request")
-    totp_token = request.POST.get('totp_token')  # 2FA token if provided
     code = request.POST.get('code')
 
-    logging.debug(f"Received 2FA token: {totp_token}")
-    logging.debug(f"Received code: {code}")
-
-    if code is None:
+    if not code:
         logger.error("Failed: No authorization code provided")
         return JsonResponse({'error': 'Failed: No code provided'}, status=400)
 
@@ -71,101 +67,134 @@ def oauth_login(request):
 
     try:
         # Get OAuth token
-        logger.info("Attempting to obtain access token")
         token_response = requests.post('https://api.intra.42.fr/oauth/token', data=token_data)
         token_json = token_response.json()
-        logger.debug(f"Token response: {token_json}")
         access_token = token_json.get('access_token')
 
-        if access_token is None:
+        if not access_token:
             logger.error("Failed: Access token not obtained")
             return JsonResponse({'error': 'Token not obtained'}, status=400)
 
-        logger.info("Access token successfully obtained")
-
         # Get user data
-        logger.info("Attempting to get user data")
         user_response = requests.get(
             'https://api.intra.42.fr/v2/me',
             headers={'Authorization': f'Bearer {access_token}'}
         )
         user_json = user_response.json()
-        logger.debug(f"User data received: {user_json}")
 
         if 'login' not in user_json or 'email' not in user_json:
-            logger.error("Failed: Incomplete or invalid user data")
-            return HttpResponse('Failure: User data not obtained', status=400)
+            logger.error("Failed: Incomplete user data")
+            return JsonResponse({'error': 'User data not obtained'}, status=400)
 
         # Get or create user
-        logger.info(f"Attempting to get/create user: {user_json['login']}")
         user, created = User.objects.get_or_create(
             username=user_json['login'],
-            defaults={
-                'email': user_json['email'],
-            }
+            defaults={'email': user_json['email']}
         )
 
-        # Check if user has already set up 2FA
+        # Generate a unique session token
+        oauth_session_token = secrets.token_urlsafe(32)
+        
+        # Store OAuth validation data in session with expiration
+        request.session[f'oauth_validated_{oauth_session_token}'] = {
+            'username': user.username,
+            'email': user.email,
+            'image_link': user_json['image']['link'],
+            'timestamp': datetime.now(pytz.utc).timestamp(),
+            'validated': True
+        }
+        
+        # Set session expiration to 5 minutes
+        request.session.set_expiry(300)
+
+        # Check 2FA status
         try:
             totp_secret = user.userprofile.totp_secret
             is_2fa_setup = bool(totp_secret)
-            logger.info("2FA status checked successfully")
-
         except:
-            logger.info("No 2FA setup found for user")
             is_2fa_setup = False
             totp_secret = None
 
-        # Case 1: New user or 2FA not configured
+        # Handle new user or no 2FA
         if created or not is_2fa_setup:
-            logger.info("Setting up new 2FA configuration")
-            # Generate new TOTP secret
             new_totp_secret = generate_totp_secret()
-
-            # Create or update user profile
+            
             if not hasattr(user, 'userprofile'):
-                logger.info("Creating new user profile with 2FA settings")
-                UserProfile.objects.create(
-                    user=user,
-                    totp_secret=new_totp_secret
-                )
-
+                UserProfile.objects.create(user=user, totp_secret=new_totp_secret)
             else:
-                logger.info("Updating existing user profile with new 2FA settings")
                 user.userprofile.totp_secret = new_totp_secret
                 user.userprofile.save()
 
-            # Generate QR code for Google Authenticator
             qr_code = generate_qr_code(user.username, new_totp_secret)
-            logger.info("2FA QR code generated successfully")
-
             return JsonResponse({
                 'status': 'setup_2fa',
                 'qr_code': qr_code,
-                'message': 'Please set up Google Authenticator with the provided QR code'
+                'session_token': oauth_session_token,
+                'user_data': {
+                    'username': user.username,
+                    'email': user.email,
+                    'image_link': user_json['image']['link']
+                }
             })
 
-        # Case 2: Existing user with 2FA already configured
-        if not totp_token or totp_token == '':
-            logger.info("2FA token required for existing user")
-            return JsonResponse({
-                'status': 'need_2fa',
-                'message': 'Please provide a 2FA code'
-            })
+        # Existing user with 2FA
+        return JsonResponse({
+            'status': 'need_2fa',
+            'session_token': oauth_session_token,
+            'user_data': {
+                'username': user.username,
+                'email': user.email,
+                'image_link': user_json['image']['link']
+            }
+        })
 
-        # Verify TOTP token
-        logger.info("Verifying 2FA token")
+    except Exception as e:
+        logger.error(f"Error in oauth_login: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@require_POST
+@csrf_exempt
+def verify_2fa(request):
+    logger.info("Starting 2FA verification")
+    username = request.POST.get('username')
+    totp_token = request.POST.get('totp_token')
+    oauth_session_token = request.POST.get('session_token')
+
+    if not all([username, totp_token, oauth_session_token]):
+        return JsonResponse({'error': 'Missing required parameters'}, status=400)
+
+    # Verify OAuth session
+    session_key = f'oauth_validated_{oauth_session_token}'
+    oauth_data = request.session.get(session_key)
+    
+    if not oauth_data or not oauth_data.get('validated'):
+        logger.error("No valid OAuth session found")
+        return JsonResponse({'error': 'Invalid session. Please authenticate through OAuth first'}, status=401)
+
+    # Verify username matches OAuth session
+    if oauth_data['username'] != username:
+        logger.error("Username mismatch with OAuth session")
+        return JsonResponse({'error': 'Invalid session data'}, status=401)
+
+    # Check session expiration (5 minutes)
+    session_timestamp = oauth_data.get('timestamp')
+    if not session_timestamp or (datetime.now(pytz.utc).timestamp() - session_timestamp) > 300:
+        # Clean up expired session
+        request.session.pop(session_key, None)
+        return JsonResponse({'error': 'Session expired. Please authenticate again'}, status=401)
+
+    try:
+        user = User.objects.get(username=username)
+        totp_secret = user.userprofile.totp_secret
 
         if not verify_totp(totp_secret, totp_token):
-            logger.error("Failed: Invalid 2FA code :" + totp_token)
-            return JsonResponse({
-                'error': 'Invalid 2FA code'
-            }, status=400)
+            logger.error(f"Invalid 2FA code: {totp_token}")
+            return JsonResponse({'error': 'Invalid 2FA code'}, status=400)
 
-        logger.info("2FA verification successful")
+        # Clean up the session after successful verification
+        request.session.pop(session_key, None)
 
-        # Generate JWT after successful 2FA
-        logger.info("Generating JWT")
+        # Generate JWT
         SECRET_KEY = os.getenv('JWT_SECRET_KEY')
         now = datetime.now(pytz.utc)
         expiration_time = now + timedelta(days=1)
@@ -174,24 +203,15 @@ def oauth_login(request):
             'username': user.username,
             'email': user.email,
             'game_access': 1,
-            'image_link': user_json['image']['link'],
+            'image_link': oauth_data['image_link'],
             'exp': int(expiration_time.timestamp())
         }
 
-        logger.debug(f"Prepared JWT payload: {payload}")
         encoded_jwt = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
-        logger.info("JWT successfully generated after 2FA validation")
-
         return JsonResponse({'access_token': encoded_jwt}, status=200)
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API request error: {str(e)}")
-        return JsonResponse({'error': 'API request failed'}, status=500)
-
-    except jwt.PyJWTError as e:
-        logger.error(f"JWT generation error: {str(e)}")
-        return JsonResponse({'error': 'JWT generation failed'}, status=500)
-
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found'}, status=404)
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        return JsonResponse({'error': 'Unexpected error occurred'}, status=500)
+        logger.error(f"Error in verify_2fa: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
