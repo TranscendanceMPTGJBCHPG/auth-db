@@ -2,12 +2,12 @@ import os
 import jwt
 import pytz
 import uuid
+import json
 import pyotp
 import qrcode
 import base64
 import logging
 import requests
-import json
 
 from io import BytesIO
 from dotenv import load_dotenv
@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from django.contrib.auth.models import User
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_GET
 
 
 load_dotenv()
@@ -49,66 +49,34 @@ def verify_totp(secret, token):
     totp = pyotp.TOTP(secret)
     return totp.verify(token)
 
+
 @require_POST
 @csrf_exempt 
 def oauth_login(request):
     logger.info("Starting oauth_login request")
-    code = request.POST.get('code')
+    temp_jwt = request.POST.get('token')
 
-    if not code:
-        logger.error("Failed: No authorization code provided")
-        return JsonResponse({'error': 'Failed: No code provided'}, status=400)
-
-    token_data = {
-        'grant_type': 'authorization_code',
-        'client_id': os.getenv('VITE_CLIENT_ID'),
-        'client_secret': os.getenv('VITE_CLIENT_SECRET'),
-        'code': code,
-        'redirect_uri': os.getenv('VITE_REDIRECT_URI'),
-    }
+    if not temp_jwt:
+        return JsonResponse({'error': 'Missing required parameter'}, status=400)
 
     try:
-        # Get OAuth token
-        token_response = requests.post('https://api.intra.42.fr/oauth/token', data=token_data)
-        token_json = token_response.json()
-        access_token = token_json.get('access_token')
+        # Verify temporary JWT
+        SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+        try:
+            jwt_data = jwt.decode(temp_jwt, SECRET_KEY, algorithms=['HS256'])
+        except jwt.ExpiredSignatureError:
+            return JsonResponse({'error': 'Token expired. Please authenticate again'}, status=401)
+        except jwt.InvalidTokenError:
+            return JsonResponse({'error': 'Invalid token'}, status=401)
 
-        if not access_token:
-            logger.error("Failed: Access token not obtained")
-            return JsonResponse({'error': 'Token not obtained'}, status=400)
+        # Verify username matches JWT data
+        if jwt_data['username'] != temp_jwt['username']:
+            logger.error("Username mismatch with JWT")
+            return JsonResponse({'error': 'Invalid token data'}, status=401)
 
-        # Get user data
-        user_response = requests.get(
-            'https://api.intra.42.fr/v2/me',
-            headers={'Authorization': f'Bearer {access_token}'}
-        )
-        user_json = user_response.json()
-
-        if 'login' not in user_json or 'email' not in user_json:
-            logger.error("Failed: Incomplete user data")
-            return JsonResponse({'error': 'User data not obtained'}, status=400)
-
-        # Get or create user
         user, created = User.objects.get_or_create(
-            username=user_json['login'],
-            defaults={'email': user_json['email']}
-        )
-
-        # Prepare payload for JWT
-        jwt_payload = {
-            'username': user.username,
-            'email': user.email,
-            'image_link': user_json['image']['link'],
-            'timestamp': datetime.now(pytz.utc).timestamp(),
-            'validated': False,  # Will be validated after 2FA
-            'exp': datetime.now(pytz.utc) + timedelta(minutes=5)  # 5 minutes expiration
-        }
-        
-        # Generate JWT token
-        jwt_token = jwt.encode(
-            jwt_payload,
-            os.getenv('JWT_SECRET_KEY'),
-            algorithm='HS256'
+            username=jwt_data['username'],
+            defaults={'email': jwt_data['email']}
         )
 
         # Check 2FA status
@@ -122,7 +90,7 @@ def oauth_login(request):
         # Handle new user or no 2FA
         if created or not is_2fa_setup:
             new_totp_secret = generate_totp_secret()
-            
+
             if not hasattr(user, 'userprofile'):
                 UserProfile.objects.create(user=user, totp_secret=new_totp_secret)
             else:
@@ -132,39 +100,27 @@ def oauth_login(request):
             qr_code = generate_qr_code(user.username, new_totp_secret)
             return JsonResponse({
                 'status': 'setup_2fa',
-                'token': jwt_token,
-                'qr_code': qr_code,
-                'user_data': {
-                    'username': user.username,
-                    'email': user.email,
-                    'image_link': user_json['image']['link']
-                }
+                'qr_code': qr_code
             })
 
         # Existing user with 2FA
         return JsonResponse({
-            'status': 'need_2fa',
-            'token': jwt_token,
-            'user_data': {
-                'username': user.username,
-                'email': user.email,
-                'image_link': user_json['image']['link']
-            }
+            'status': 'need_2fa'
         })
 
     except Exception as e:
         logger.error(f"Error in oauth_login: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
+
 @require_POST
 @csrf_exempt
 def verify_2fa(request):
     logger.info("Starting 2FA verification")
-    username = request.POST.get('username')
     totp_token = request.POST.get('totp_token')
     temp_jwt = request.POST.get('token')
 
-    if not all([username, totp_token, temp_jwt]):
+    if not all([totp_token, temp_jwt]):
         return JsonResponse({'error': 'Missing required parameters'}, status=400)
 
     try:
@@ -177,13 +133,8 @@ def verify_2fa(request):
         except jwt.InvalidTokenError:
             return JsonResponse({'error': 'Invalid token'}, status=401)
 
-        # Verify username matches JWT data
-        if jwt_data['username'] != username:
-            logger.error("Username mismatch with JWT")
-            return JsonResponse({'error': 'Invalid token data'}, status=401)
-
         # Verify 2FA
-        user = User.objects.get(username=username)
+        user = User.objects.get(username=jwt_data['username'])
         totp_secret = user.userprofile.totp_secret
 
         if not verify_totp(totp_secret, totp_token):
@@ -210,3 +161,134 @@ def verify_2fa(request):
     except Exception as e:
         logger.error(f"Error in verify_2fa: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+    
+
+@require_POST
+@csrf_exempt
+def reset(request):
+    username = request.POST.get('username')
+    if not username:
+        return JsonResponse({'error': 'Missing username'}, status=400)
+
+    try:
+        user = User.objects.get(username=username)
+        user.userprofile.totp_secret = None
+        user.userprofile.save()
+        return JsonResponse({'status': 'success'}, status=200)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_GET
+@csrf_exempt
+def authfortytwo(request):
+   code = request.GET.get('code')
+   errorPage = """
+       <!DOCTYPE html>
+       <html>
+       <head>
+           <title>Authentication failed</title>
+           <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+       </head>
+       <body>
+           <div class="text-center position-absolute top-50 start-50 translate-middle">
+               <div class="text-danger">
+                   <h1>Authentication failed</h1>
+               </div>
+               <div>
+                   <h3>You are going to be redirected...</h3>
+               </div>
+           </div>
+           <script>
+               setTimeout(() => window.close(), 5000);
+           </script>
+       </body>
+       </html>
+   """
+   htmlpage = """
+       <!DOCTYPE html>
+       <html>
+       <head>
+           <title>Authentication in progress...</title>
+           <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+       </head>
+       <body>
+           <div class="text-center position-absolute top-50 start-50 translate-middle">
+               <div class="text-success">
+                   <div class="spinner-border" role="status">
+                       <span class="visually-hidden">Loading...</span>
+                   </div>
+                   <h1>42 Login Successful!</h1>
+               </div>
+               <div>
+                   <h3>You are going to be redirected...</h3>
+               </div>
+           </div>
+           <script>
+               setTimeout(() => window.close(), 5000);
+           </script>
+       </body>
+       </html>
+   """
+
+   if not code:
+       return HttpResponse(errorPage)
+
+   try:
+       ft_token_data = {
+           'grant_type': 'authorization_code',
+           'client_id': os.getenv('VITE_CLIENT_ID'),
+           'client_secret': os.getenv('VITE_CLIENT_SECRET'),
+           'code': code,
+           'redirect_uri': os.getenv('VITE_REDIRECT_URI'),
+       }
+
+       token_response = requests.post('https://api.intra.42.fr/oauth/token', data=ft_token_data)
+       token_json = token_response.json()
+       access_token = token_json.get('access_token')
+
+       if not access_token:
+           return HttpResponse(errorPage)
+
+       user_response = requests.get(
+           'https://api.intra.42.fr/v2/me',
+           headers={'Authorization': f'Bearer {access_token}'}
+       )
+       user_json = user_response.json()
+
+       if 'login' not in user_json or 'email' not in user_json:
+           return HttpResponse(errorPage)
+
+       user, created = User.objects.get_or_create(
+           username=user_json['login'],
+           defaults={'email': user_json['email']}
+       )
+
+       jwt_payload = {
+           'username': user.username,
+           'email': user.email,
+           'image_link': user_json['image']['link'],
+           'exp': datetime.now(pytz.utc) + timedelta(minutes=5)  # 5 minutes d'expiration
+       }
+
+       jwt_token = jwt.encode(
+           jwt_payload,
+           os.getenv('JWT_SECRET_KEY'),
+           algorithm='HS256'
+       )
+
+       response = HttpResponse(htmlpage)
+       response.set_cookie(
+           'jwt_token',
+           jwt_token,
+           max_age=5*60,  # 5 minutes en secondes
+           secure=True,     # Garde HTTPS
+           httponly=False,  # Permet l'accès JS
+           samesite='Lax'  # Plus permissif pour localhost
+       )
+       return response
+
+   except Exception as e:
+       return HttpResponse(errorPage)
