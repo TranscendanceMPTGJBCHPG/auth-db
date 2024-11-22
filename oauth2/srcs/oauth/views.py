@@ -51,7 +51,7 @@ def verify_totp(secret, token):
 
 
 @require_POST
-@csrf_exempt 
+@csrf_exempt
 def oauth_login(request):
     logger.info("Starting oauth_login request")
     temp_jwt = request.POST.get('token')
@@ -69,15 +69,14 @@ def oauth_login(request):
         except jwt.InvalidTokenError:
             return JsonResponse({'error': 'Invalid token'}, status=401)
 
-        # Verify username matches JWT data
-        if jwt_data['username'] != temp_jwt['username']:
-            logger.error("Username mismatch with JWT")
-            return JsonResponse({'error': 'Invalid token data'}, status=401)
+        logging.info(f"JWT data: {json.dumps(jwt_data)}")
 
         user, created = User.objects.get_or_create(
             username=jwt_data['username'],
             defaults={'email': jwt_data['email']}
         )
+
+        logging.info("after get_or_create")
 
         # Check 2FA status
         try:
@@ -86,6 +85,8 @@ def oauth_login(request):
         except:
             is_2fa_setup = False
             totp_secret = None
+
+        logging.info(f"2FA setup: {is_2fa_setup}")
 
         # Handle new user or no 2FA
         if created or not is_2fa_setup:
@@ -96,6 +97,8 @@ def oauth_login(request):
             else:
                 user.userprofile.totp_secret = new_totp_secret
                 user.userprofile.save()
+
+            logging.info("before end")
 
             qr_code = generate_qr_code(user.username, new_totp_secret)
             return JsonResponse({
@@ -161,7 +164,7 @@ def verify_2fa(request):
     except Exception as e:
         logger.error(f"Error in verify_2fa: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
-    
+
 
 @require_POST
 @csrf_exempt
