@@ -69,14 +69,10 @@ def oauth_login(request):
         except jwt.InvalidTokenError:
             return JsonResponse({'error': 'Invalid token'}, status=401)
 
-        logging.info(f"JWT data: {json.dumps(jwt_data)}")
-
         user, created = User.objects.get_or_create(
             username=jwt_data['username'],
             defaults={'email': jwt_data['email']}
         )
-
-        logging.info("after get_or_create")
 
         # Check 2FA status
         try:
@@ -85,8 +81,6 @@ def oauth_login(request):
         except:
             is_2fa_setup = False
             totp_secret = None
-
-        logging.info(f"2FA setup: {is_2fa_setup}")
 
         # Handle new user or no 2FA
         if created or not is_2fa_setup:
@@ -97,8 +91,6 @@ def oauth_login(request):
             else:
                 user.userprofile.totp_secret = new_totp_secret
                 user.userprofile.save()
-
-            logging.info("before end")
 
             qr_code = generate_qr_code(user.username, new_totp_secret)
             return JsonResponse({
@@ -175,42 +167,43 @@ def reset(request):
 
     try:
         user = User.objects.get(username=username)
-        user.userprofile.totp_secret = None
-        user.userprofile.save()
+        user.delete()
         return JsonResponse({'status': 'success'}, status=200)
     except User.DoesNotExist:
+        logger.error(f"User not found for deletion: {username}")
         return JsonResponse({'error': 'User not found'}, status=404)
     except Exception as e:
+        logger.error(f"Error in reset: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
 
 @require_GET
 @csrf_exempt
 def authfortytwo(request):
-   code = request.GET.get('code')
-   errorPage = """
-       <!DOCTYPE html>
-       <html>
-       <head>
-           <title>Authentication failed</title>
-           <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-       </head>
-       <body>
-           <div class="text-center position-absolute top-50 start-50 translate-middle">
-               <div class="text-danger">
-                   <h1>Authentication failed</h1>
-               </div>
-               <div>
-                   <h3>You are going to be redirected...</h3>
-               </div>
-           </div>
-           <script>
-               setTimeout(() => window.close(), 5000);
-           </script>
-       </body>
-       </html>
-   """
-   htmlpage = """
+    code = request.GET.get('code')
+    errorPage = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Authentication failed</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head>
+        <body>
+            <div class="text-center position-absolute top-50 start-50 translate-middle">
+                <div class="text-danger">
+                    <h1>Authentication failed</h1>
+                </div>
+                <div>
+                    <h3>You are going to be redirected...</h3>
+                </div>
+            </div>
+            <script>
+                setTimeout(() => window.close(), 5000);
+            </script>
+        </body>
+        </html>
+    """
+    htmlpage = """
        <!DOCTYPE html>
        <html>
        <head>
@@ -236,62 +229,68 @@ def authfortytwo(request):
        </html>
    """
 
-   if not code:
-       return HttpResponse(errorPage)
+    if not code:
+        logging.error("No code")
+        return HttpResponse(errorPage)
 
-   try:
-       ft_token_data = {
-           'grant_type': 'authorization_code',
-           'client_id': os.getenv('VITE_CLIENT_ID'),
-           'client_secret': os.getenv('VITE_CLIENT_SECRET'),
-           'code': code,
-           'redirect_uri': os.getenv('VITE_REDIRECT_URI'),
-       }
+    try:
+        ft_token_data = {
+            'grant_type': 'authorization_code',
+            'client_id': os.getenv('VITE_CLIENT_ID'),
+            'client_secret': os.getenv('VITE_CLIENT_SECRET'),
+            'code': code,
+            'redirect_uri': os.getenv('VITE_REDIRECT_URI'),
+        }
 
-       token_response = requests.post('https://api.intra.42.fr/oauth/token', data=ft_token_data)
-       token_json = token_response.json()
-       access_token = token_json.get('access_token')
+        token_response = requests.post('https://api.intra.42.fr/oauth/token', data=ft_token_data)
 
-       if not access_token:
-           return HttpResponse(errorPage)
+        token_json = token_response.json()
 
-       user_response = requests.get(
-           'https://api.intra.42.fr/v2/me',
-           headers={'Authorization': f'Bearer {access_token}'}
-       )
-       user_json = user_response.json()
+        access_token = token_json.get('access_token')
 
-       if 'login' not in user_json or 'email' not in user_json:
-           return HttpResponse(errorPage)
+        if not access_token:
+            logging.error("No access token")
+            return HttpResponse(errorPage)
 
-       user, created = User.objects.get_or_create(
-           username=user_json['login'],
-           defaults={'email': user_json['email']}
-       )
+        user_response = requests.get(
+            'https://api.intra.42.fr/v2/me',
+            headers={'Authorization': f'Bearer {access_token}'}
+        )
+        user_json = user_response.json()
 
-       jwt_payload = {
-           'username': user.username,
-           'email': user.email,
-           'image_link': user_json['image']['link'],
-           'exp': datetime.now(pytz.utc) + timedelta(minutes=5)  # 5 minutes d'expiration
-       }
+        if 'login' not in user_json or 'email' not in user_json:
+            logging.error("No login or email")
+            return HttpResponse(errorPage)
 
-       jwt_token = jwt.encode(
-           jwt_payload,
-           os.getenv('JWT_SECRET_KEY'),
-           algorithm='HS256'
-       )
+        user, created = User.objects.get_or_create(
+            username=user_json['login'],
+            defaults={'email': user_json['email']}
+        )
 
-       response = HttpResponse(htmlpage)
-       response.set_cookie(
-           'jwt_token',
-           jwt_token,
-           max_age=5*60,  # 5 minutes en secondes
-           secure=True,     # Garde HTTPS
-           httponly=False,  # Permet l'accès JS
-           samesite='Lax'  # Plus permissif pour localhost
-       )
-       return response
+        jwt_payload = {
+            'username': user.username,
+            'email': user.email,
+            'image_link': user_json['image']['link'],
+            'exp': datetime.now(pytz.utc) + timedelta(minutes=5)  # 5 minutes d'expiration
+        }
 
-   except Exception as e:
-       return HttpResponse(errorPage)
+        jwt_token = jwt.encode(
+            jwt_payload,
+            os.getenv('JWT_SECRET_KEY'),
+            algorithm='HS256'
+        )
+
+        response = HttpResponse(htmlpage)
+        response.set_cookie(
+            'jwt_token',
+            jwt_token,
+            max_age=5*60,  # 5 minutes en secondes
+            secure=True,     # Garde HTTPS
+            httponly=False,  # Permet l'accès JS
+            samesite='Lax'  # Plus permissif pour localhost
+        )
+        return response
+
+    except Exception as e:
+        logging.error(f"Error in authfortytwo: {str(e)}")
+        return HttpResponse(errorPage)
