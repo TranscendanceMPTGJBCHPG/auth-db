@@ -223,7 +223,7 @@ def authfortytwo(request):
                </div>
            </div>
            <script>
-               setTimeout(() => window.close(), 5000);
+               setTimeout(() => window.close(), 3000);
            </script>
        </body>
        </html>
@@ -234,12 +234,17 @@ def authfortytwo(request):
         return HttpResponse(errorPage)
 
     try:
+        host = request.META.get('HTTP_HOST')
+        redirect_uri = f'https://{host}:7777/auth/authfortytwo'
+
+        logger.info(f"Redirect URI: {redirect_uri}")
+
         ft_token_data = {
             'grant_type': 'authorization_code',
             'client_id': os.getenv('VITE_CLIENT_ID'),
             'client_secret': os.getenv('VITE_CLIENT_SECRET'),
             'code': code,
-            'redirect_uri': os.getenv('VITE_REDIRECT_URI'),
+            'redirect_uri': redirect_uri,
         }
 
         token_response = requests.post('https://api.intra.42.fr/oauth/token', data=ft_token_data)
@@ -289,6 +294,7 @@ def authfortytwo(request):
             httponly=False,  # Permet l'accès JS
             samesite='Lax'  # Plus permissif pour localhost
         )
+
         return response
 
     except Exception as e:
