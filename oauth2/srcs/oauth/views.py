@@ -134,7 +134,7 @@ def verify_2fa(request):
 
         if not verify_totp(totp_secret, totp_token):
             logger.error(f"Invalid 2FA code: {totp_token}")
-            return JsonResponse({'error': 'Invalid 2FA code'}, status=400)
+            return JsonResponse({'error': 'Invalid 2FA code'}, status=200)
 
         # Generate new long-term JWT
         now = datetime.now(pytz.utc)
