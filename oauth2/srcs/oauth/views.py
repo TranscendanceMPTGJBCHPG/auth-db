@@ -54,14 +54,14 @@ def verify_totp(secret, token):
 @csrf_exempt
 def oauth_login(request):
     logger.info("Starting oauth_login request")
-    temp_jwt = request.POST.get('token')
+    temp_jwt = request.POST.get('temp_token')
 
     if not temp_jwt:
         return JsonResponse({'error': 'Missing required parameter'}, status=400)
 
     try:
         # Verify temporary JWT
-        SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+        SECRET_KEY = os.getenv('TEMPORARY_JWT_SECRET_KEY')
         try:
             jwt_data = jwt.decode(temp_jwt, SECRET_KEY, algorithms=['HS256'])
         except jwt.ExpiredSignatureError:
@@ -113,16 +113,14 @@ def oauth_login(request):
 def verify_2fa(request):
     logger.info("Starting 2FA verification")
     totp_token = request.POST.get('totp_token')
-    temp_jwt = request.POST.get('token')
+    temp_jwt = request.POST.get('temp_token')
 
     if not all([totp_token, temp_jwt]):
         return JsonResponse({'error': 'Missing required parameters'}, status=400)
 
     try:
-        # Verify temporary JWT
-        SECRET_KEY = os.getenv('JWT_SECRET_KEY')
         try:
-            jwt_data = jwt.decode(temp_jwt, SECRET_KEY, algorithms=['HS256'])
+            jwt_data = jwt.decode(temp_jwt, os.getenv('TEMPORARY_JWT_SECRET_KEY'), algorithms=['HS256'])
         except jwt.ExpiredSignatureError:
             return JsonResponse({'error': 'Token expired. Please authenticate again'}, status=401)
         except jwt.InvalidTokenError:
@@ -143,12 +141,11 @@ def verify_2fa(request):
         payload = {
             'username': user.username,
             'email': user.email,
-            'game_access': 1,
             'image_link': jwt_data['image_link'],
             'exp': int(expiration_time.timestamp())
         }
 
-        encoded_jwt = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+        encoded_jwt = jwt.encode(payload, os.getenv('JWT_SECRET_KEY'), algorithm='HS256')
         return JsonResponse({'access_token': encoded_jwt}, status=200)
 
     except User.DoesNotExist:
@@ -158,10 +155,22 @@ def verify_2fa(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+# ajouter un check token
 @require_POST
 @csrf_exempt
 def reset(request):
-    username = request.POST.get('username')
+    jwt_token = request.POST.get('token')
+
+    if not jwt_token:
+        return JsonResponse({'error': 'Missing required parameter'}, status=400)
+
+    try:
+        jwt_data = jwt.decode(jwt_token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+    except jwt.ExpiredSignatureError:
+        return JsonResponse({'error': 'Token expired. Please authenticate again'}, status=401)
+    except jwt.InvalidTokenError:
+        return JsonResponse({'error': 'Invalid token'}, status=401)
+    username = jwt_data.get('username')
     if not username:
         return JsonResponse({'error': 'Missing username'}, status=400)
 
@@ -281,13 +290,13 @@ def authfortytwo(request):
 
         jwt_token = jwt.encode(
             jwt_payload,
-            os.getenv('JWT_SECRET_KEY'),
+            os.getenv('TEMPORARY_JWT_SECRET_KEY'),
             algorithm='HS256'
         )
 
         response = HttpResponse(htmlpage)
         response.set_cookie(
-            'jwt_token',
+            'temp_token',
             jwt_token,
             max_age=5*60,  # 5 minutes en secondes
             secure=True,     # Garde HTTPS
