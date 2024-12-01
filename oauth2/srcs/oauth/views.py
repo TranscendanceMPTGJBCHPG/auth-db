@@ -309,3 +309,11 @@ def authfortytwo(request):
     except Exception as e:
         logging.error(f"Error in authfortytwo: {str(e)}")
         return HttpResponse(errorPage)
+
+
+@require_GET
+@csrf_exempt
+def gettoken(request):
+    token = os.getenv('CLI_SERVICE_TOKEN')
+    # logger.info(f"Token: {token}")
+    return JsonResponse({'token': token}, status=200)
