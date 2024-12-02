@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import oauth_login, verify_2fa, reset, authfortytwo, gettoken
+from .views import oauth_login, verify_2fa, reset, authfortytwo, gettoken, getaitoken, getgametoken
 
 urlpatterns = [
     path('authfortytwo/', authfortytwo, name='authfortytwo'),
@@ -7,4 +7,6 @@ urlpatterns = [
     path('reset/', reset, name='reset'),
     path('2fa/', verify_2fa, name='2fa'),
     path('gettoken/', gettoken, name='gettoken'),
+    path('getaitoken/', getaitoken, name='getaitoken'),
+    path('getgametoken/', getgametoken, name='getgametoken'),
 ]

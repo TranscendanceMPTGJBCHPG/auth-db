@@ -317,3 +317,21 @@ def gettoken(request):
     token = os.getenv('CLI_SERVICE_TOKEN')
     # logger.info(f"Token: {token}")
     return JsonResponse({'token': token}, status=200)
+
+
+@require_GET
+@csrf_exempt
+def getaitoken(request):
+    token = os.getenv('AI_SERVICE_TOKEN')
+    logger.info(f"Token: {token}")
+    return JsonResponse({'token': token}, status=200)
+
+
+@require_GET
+@csrf_exempt
+def getgametoken(request):
+    token = os.getenv('GAME_SERVICE_TOKEN')
+    # logger.info(f"Token: {token}")
+    return JsonResponse({'token': token}, status=200)
+
+
