@@ -352,3 +352,20 @@ def get_guest_token(request):
 
     encoded_jwt = jwt.encode(payload, os.getenv('JWT_SECRET_KEY'), algorithm='HS256')
     return JsonResponse({'access_token': encoded_jwt}, status=200)
+
+@require_GET
+@csrf_exempt
+def verify_token(request):
+    token = request.headers.get('Authorization')
+    if not token:
+        return JsonResponse({'error': 'Missing token'}, status=400)
+
+    try:
+        jwt_data = jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+        return JsonResponse({'username': jwt_data['username']}, status=200)
+    except jwt.ExpiredSignatureError:
+        return JsonResponse({'error': 'Token expired'}, status=401)
+    except jwt.InvalidTokenError:
+        return JsonResponse({'error': 'Invalid token'}, status=401)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
