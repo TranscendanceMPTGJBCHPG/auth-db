@@ -77,20 +77,25 @@ def oauth_login(request):
         # Check 2FA status
         try:
             totp_secret = user.userprofile.totp_secret
+            first_login_done = user.userprofile.first_login_done
             is_2fa_setup = bool(totp_secret)
         except:
             is_2fa_setup = False
+            first_login_done = False
             totp_secret = None
 
         # Handle new user or no 2FA
-        if created or not is_2fa_setup:
-            new_totp_secret = generate_totp_secret()
-
-            if not hasattr(user, 'userprofile'):
-                UserProfile.objects.create(user=user, totp_secret=new_totp_secret)
+        if first_login_done is False:
+            if created or not is_2fa_setup:
+                new_totp_secret = generate_totp_secret()
+                if not hasattr(user, 'userprofile'):
+                    UserProfile.objects.create(user=user, totp_secret=new_totp_secret, first_login_done=False)
+                else:
+                    user.userprofile.totp_secret = new_totp_secret 
+                    user.userprofile.save()
             else:
-                user.userprofile.totp_secret = new_totp_secret
-                user.userprofile.save()
+                # Add this line to handle the case where first_login_done is False but user has 2FA setup
+                new_totp_secret = user.userprofile.totp_secret
 
             qr_code = generate_qr_code(user.username, new_totp_secret)
             return JsonResponse({
@@ -133,6 +138,10 @@ def verify_2fa(request):
         if not verify_totp(totp_secret, totp_token):
             logger.error(f"Invalid 2FA code: {totp_token}")
             return JsonResponse({'error': 'Invalid 2FA code'}, status=200)
+
+        # Mark first login as done
+        user.userprofile.first_login_done = True
+        user.userprofile.save()
 
         # Generate new long-term JWT
         now = datetime.now(pytz.utc)
@@ -310,14 +319,12 @@ def authfortytwo(request):
         logging.error(f"Error in authfortytwo: {str(e)}")
         return HttpResponse(errorPage)
 
-
 @require_GET
 @csrf_exempt
 def gettoken(request):
     token = os.getenv('CLI_SERVICE_TOKEN')
     # logger.info(f"Token: {token}")
     return JsonResponse({'token': token}, status=200)
-
 
 @require_GET
 @csrf_exempt
@@ -326,7 +333,6 @@ def getaitoken(request):
     logger.info(f"Token: {token}")
     return JsonResponse({'token': token}, status=200)
 
-
 @require_GET
 @csrf_exempt
 def getgametoken(request):
@@ -334,4 +340,15 @@ def getgametoken(request):
     # logger.info(f"Token: {token}")
     return JsonResponse({'token': token}, status=200)
 
+@require_GET
+@csrf_exempt
+def get_guest_token(request):
+    payload = {
+        'username': 'guest',
+        'email': None,
+        'image_link': None,
+        'exp': int(expiration_time.timestamp())
+    }
 
+    encoded_jwt = jwt.encode(payload, os.getenv('JWT_SECRET_KEY'), algorithm='HS256')
+    return JsonResponse({'access_token': encoded_jwt}, status=200)
