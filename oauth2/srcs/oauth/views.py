@@ -343,6 +343,9 @@ def getgametoken(request):
 @require_GET
 @csrf_exempt
 def get_guest_token(request):
+
+    now = datetime.now(pytz.utc)
+    expiration_time = now + timedelta(days=1)
     payload = {
         'username': 'guest',
         'email': None,
