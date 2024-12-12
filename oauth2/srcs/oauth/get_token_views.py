@@ -15,14 +15,8 @@ logger = logging.getLogger(__name__)
 
 @require_GET
 @csrf_exempt
-def gettoken(request):
-    token = os.getenv('CLI_SERVICE_TOKEN')
-    # logger.info(f"Token: {token}")
-    return JsonResponse({'token': token}, status=200)
-
-@require_GET
-@csrf_exempt
 def get_guest_token(request):
+    logging.info("get_guest_token")
 
     now = datetime.now(pytz.utc)
     expiration_time = now + timedelta(days=1)

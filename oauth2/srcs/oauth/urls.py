@@ -9,7 +9,6 @@ urlpatterns = [
     path('authfortytwo/', authfortytwo, name='authfortytwo'),
     path('2fa/', verify_2fa, name='2fa'),
     ######################### GET TOKEN #########################
-    path('gettoken/', gettoken, name='gettoken'),
     path('getguesttoken/', get_guest_token, name='getguesttoken'),
     ######################### USER DATA #########################
     path('getusercounters/', get_user_counters, name='getusercounters'),
