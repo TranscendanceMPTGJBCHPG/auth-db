@@ -48,10 +48,10 @@ def get_user_counters(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-
 @require_POST
 @csrf_exempt
-def increment_user_win_counter(request):
+def increment_user_counters(request):
+    # Vérification du token JWT
     jwt_token = request.POST.get('token')
     if not jwt_token:
         return JsonResponse({'error': 'Missing required parameter'}, status=400)
@@ -63,61 +63,48 @@ def increment_user_win_counter(request):
     except jwt.InvalidTokenError:
         return JsonResponse({'error': 'Invalid token'}, status=401)
         
+    # Vérification du username
     username = jwt_data.get('username')
     if not username:
         return JsonResponse({'error': 'Missing username'}, status=400)
+    
+    # Récupération du nombre de buts à ajouter (par défaut 1)
+    goal_increment = request.POST.get('goals', 1)
+    try:
+        goal_increment = int(goal_increment)
+        if goal_increment < 0:
+            return JsonResponse({'error': 'Goals increment must be positive'}, status=400)
+    except ValueError:
+        return JsonResponse({'error': 'Invalid goals value'}, status=400)
+    
+    # Incrémentation du compteur de victoires
+    has_won = request.POST.get('winner', 'false').lower() == 'true'
         
     try:
         with transaction.atomic():
             user = User.objects.select_for_update().get(username=username)
-            user.userprofile.win_counter += 1
+            
+            # Incrémentation du compteur de buts
+            user.userprofile.goal_counter += goal_increment
+            
+            # Incrémentation du compteur de victoires
+            if has_won:
+                user.userprofile.win_counter += 1
+                
             user.userprofile.save()
             
         return JsonResponse({
             'success': True,
+            'goal_counter': user.userprofile.goal_counter,
             'win_counter': user.userprofile.win_counter
         }, status=200)
         
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found'}, status=404)
     except Exception as e:
-        logger.error(f"Error in increment_user_win_counter: {str(e)}")
+        logger.error(f"Error in increment_user_counters: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
-
-@require_POST
-@csrf_exempt
-def increment_user_goal_counter(request):
-    jwt_token = request.POST.get('token')
-    if not jwt_token:
-        return JsonResponse({'error': 'Missing required parameter'}, status=400)
     
-    try:
-        jwt_data = jwt.decode(jwt_token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
-    except jwt.ExpiredSignatureError:
-        return JsonResponse({'error': 'Token expired. Please authenticate again'}, status=401)
-    except jwt.InvalidTokenError:
-        return JsonResponse({'error': 'Invalid token'}, status=401)
-        
-    username = jwt_data.get('username')
-    if not username:
-        return JsonResponse({'error': 'Missing username'}, status=400)
-        
-    try:
-        with transaction.atomic():
-            user = User.objects.select_for_update().get(username=username)
-            user.userprofile.goal_counter += 1
-            user.userprofile.save()
-            
-        return JsonResponse({
-            'success': True,
-            'goal_counter': user.userprofile.goal_counter
-        }, status=200)
-        
-    except User.DoesNotExist:
-        return JsonResponse({'error': 'User not found'}, status=404)
-    except Exception as e:
-        logger.error(f"Error in increment_user_goal_counter: {str(e)}")
-        return JsonResponse({'error': str(e)}, status=500)
 
 @require_POST
 @csrf_exempt
