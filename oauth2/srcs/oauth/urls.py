@@ -1,13 +1,20 @@
 from django.urls import path
-from .views import oauth_login, verify_2fa, reset, authfortytwo, gettoken, getaitoken, getgametoken, get_guest_token
+from .auth_views import oauth_login, verify_2fa, authfortytwo
+from .get_token_views import gettoken, get_guest_token
+from .user_data_views import get_user_win_counter, get_user_goal_counter, increment_user_win_counter, increment_user_goal_counter, reset
 
 urlpatterns = [
-    path('authfortytwo/', authfortytwo, name='authfortytwo'),
+    ############################ AUTH ###########################
     path('oauth/', oauth_login, name='oauth'),
-    path('reset/', reset, name='reset'),
+    path('authfortytwo/', authfortytwo, name='authfortytwo'),
     path('2fa/', verify_2fa, name='2fa'),
+    ######################### GET TOKEN #########################
     path('gettoken/', gettoken, name='gettoken'),
-    path('getaitoken/', getaitoken, name='getaitoken'),
-    path('getgametoken/', getgametoken, name='getgametoken'),
-    path('getguesttoken/', get_guest_token, name='getguesttoken')
+    path('getguesttoken/', get_guest_token, name='getguesttoken'),
+    ######################### USER DATA #########################
+    path('getuserwincounter/', get_user_win_counter, name='getuserwincounter'),
+    path('getusergoalcounter/', get_user_goal_counter, name='getusergoalcounter'),
+    path('incrementuserwincounter/', increment_user_win_counter, name='incrementuserwincounter'),
+    path('incrementusergoalcounter/', increment_user_goal_counter, name='incrementusergoalcounter'),
+    path('reset/', reset, name='reset')
 ]

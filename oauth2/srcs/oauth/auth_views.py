@@ -163,38 +163,6 @@ def verify_2fa(request):
         logger.error(f"Error in verify_2fa: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
-
-# ajouter un check token
-@require_POST
-@csrf_exempt
-def reset(request):
-    jwt_token = request.POST.get('token')
-
-    if not jwt_token:
-        return JsonResponse({'error': 'Missing required parameter'}, status=400)
-
-    try:
-        jwt_data = jwt.decode(jwt_token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
-    except jwt.ExpiredSignatureError:
-        return JsonResponse({'error': 'Token expired. Please authenticate again'}, status=401)
-    except jwt.InvalidTokenError:
-        return JsonResponse({'error': 'Invalid token'}, status=401)
-    username = jwt_data.get('username')
-    if not username:
-        return JsonResponse({'error': 'Missing username'}, status=400)
-
-    try:
-        user = User.objects.get(username=username)
-        user.delete()
-        return JsonResponse({'status': 'success'}, status=200)
-    except User.DoesNotExist:
-        logger.error(f"User not found for deletion: {username}")
-        return JsonResponse({'error': 'User not found'}, status=404)
-    except Exception as e:
-        logger.error(f"Error in reset: {str(e)}")
-        return JsonResponse({'error': str(e)}, status=500)
-
-
 @require_GET
 @csrf_exempt
 def authfortytwo(request):
@@ -318,40 +286,3 @@ def authfortytwo(request):
     except Exception as e:
         logging.error(f"Error in authfortytwo: {str(e)}")
         return HttpResponse(errorPage)
-
-@require_GET
-@csrf_exempt
-def gettoken(request):
-    token = os.getenv('CLI_SERVICE_TOKEN')
-    # logger.info(f"Token: {token}")
-    return JsonResponse({'token': token}, status=200)
-
-@require_GET
-@csrf_exempt
-def getaitoken(request):
-    token = os.getenv('AI_SERVICE_TOKEN')
-    logger.info(f"Token: {token}")
-    return JsonResponse({'token': token}, status=200)
-
-@require_GET
-@csrf_exempt
-def getgametoken(request):
-    token = os.getenv('GAME_SERVICE_TOKEN')
-    # logger.info(f"Token: {token}")
-    return JsonResponse({'token': token}, status=200)
-
-@require_GET
-@csrf_exempt
-def get_guest_token(request):
-
-    now = datetime.now(pytz.utc)
-    expiration_time = now + timedelta(days=1)
-    payload = {
-        'username': 'guest',
-        'email': None,
-        'image_link': None,
-        'exp': int(expiration_time.timestamp())
-    }
-
-    encoded_jwt = jwt.encode(payload, os.getenv('JWT_SECRET_KEY'), algorithm='HS256')
-    return JsonResponse({'access_token': encoded_jwt}, status=200)
