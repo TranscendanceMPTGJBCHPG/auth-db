@@ -15,58 +15,36 @@ logger = logging.getLogger(__name__)
 
 @require_GET
 @csrf_exempt
-def get_user_win_counter(request):
-    jwt_token = request.GET.get('token')
-
+def get_user_counters(request):
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+        return JsonResponse({'error': 'Token non fourni'}, status=401)
+    
+    jwt_token = auth_header.split(' ')[1]
     if not jwt_token:
         return JsonResponse({'error': 'Missing required parameter'}, status=400)
 
     try:
         jwt_data = jwt.decode(jwt_token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+        username = jwt_data.get('username')
+        
+        if not username:
+            return JsonResponse({'error': 'Missing username'}, status=400)
+
+        user = User.objects.get(username=username)
+        return JsonResponse({
+            'win_counter': user.userprofile.win_counter,
+            'goal_counter': user.userprofile.goal_counter
+        }, status=200)
+
     except jwt.ExpiredSignatureError:
         return JsonResponse({'error': 'Token expired. Please authenticate again'}, status=401)
     except jwt.InvalidTokenError:
         return JsonResponse({'error': 'Invalid token'}, status=401)
-
-    username = jwt_data.get('username')
-    if not username:
-        return JsonResponse({'error': 'Missing username'}, status=400)
-
-    try:
-        user = User.objects.get(username=username)
-        return JsonResponse({'win_counter': user.userprofile.win_counter}, status=200)
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found'}, status=404)
     except Exception as e:
-        logger.error(f"Error in get_user_win_counter: {str(e)}")
-        return JsonResponse({'error': str(e)}, status=500)
-
-@require_GET
-@csrf_exempt
-def get_user_goal_counter(request):
-    jwt_token = request.GET.get('token')
-
-    if not jwt_token:
-        return JsonResponse({'error': 'Missing required parameter'}, status=400)
-
-    try:
-        jwt_data = jwt.decode(jwt_token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
-    except jwt.ExpiredSignatureError:
-        return JsonResponse({'error': 'Token expired. Please authenticate again'}, status=401)
-    except jwt.InvalidTokenError:
-        return JsonResponse({'error': 'Invalid token'}, status=401)
-
-    username = jwt_data.get('username')
-    if not username:
-        return JsonResponse({'error': 'Missing username'}, status=400)
-
-    try:
-        user = User.objects.get(username=username)
-        return JsonResponse({'goal_counter': user.userprofile.goal_counter}, status=200)
-    except User.DoesNotExist:
-        return JsonResponse({'error': 'User not found'}, status=404)
-    except Exception as e:
-        logger.error(f"Error in get_user_goal_counter: {str(e)}")
+        logger.error(f"Error in get_user_counters: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
 
