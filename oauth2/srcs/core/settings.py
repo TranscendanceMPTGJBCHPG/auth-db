@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('BACKEND_SECRET_KEY')
 DEBUG = False
 ip = os.getenv('VITE_REDIRECT_URI').split('://')[1].split(':')[0]
-ALLOWED_HOSTS = ['localhost', ip]
+ALLOWED_HOSTS = ['localhost', ip, 'nginx']
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 INSTALLED_APPS = [

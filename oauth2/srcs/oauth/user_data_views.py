@@ -51,11 +51,13 @@ def get_user_counters(request):
 @require_POST
 @csrf_exempt
 def increment_user_counters(request):
+    logging.info(f"Request increment user counters: {request.POST}")
+
     # Vérification du token JWT
     jwt_token = request.POST.get('token')
     if not jwt_token:
         return JsonResponse({'error': 'Missing required parameter'}, status=400)
-    
+
     try:
         jwt_data = jwt.decode(jwt_token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
     except jwt.ExpiredSignatureError:

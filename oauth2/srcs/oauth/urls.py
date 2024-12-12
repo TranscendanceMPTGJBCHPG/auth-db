@@ -1,6 +1,6 @@
 from django.urls import path
 from .auth_views import oauth_login, verify_2fa, authfortytwo
-from .get_token_views import gettoken, get_guest_token
+from .get_token_views import get_guest_token
 from .user_data_views import get_user_counters, increment_user_counters, reset
 
 urlpatterns = [
