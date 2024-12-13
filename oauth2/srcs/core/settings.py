@@ -136,11 +136,3 @@ LOGGING = {
         },
     },
 }
-
-# SECURE_SSL_REDIRECT = True  # Redirige tout le trafic HTTP vers HTTPS
-# SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-# SESSION_COOKIE_SECURE = True  # Cookies uniquement envoyés via HTTPS 
-# CSRF_COOKIE_SECURE = True    # Token CSRF uniquement envoyé via HTTPS
-# SECURE_HSTS_SECONDS = 31536000  # Active HSTS pour 1 an
-# SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-# SECURE_HSTS_PRELOAD = True
