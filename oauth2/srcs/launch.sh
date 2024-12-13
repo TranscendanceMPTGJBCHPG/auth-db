@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e
 
-sleep 20
-
 python manage.py makemigrations
 python manage.py makemigrations oauth
 python manage.py migrate
