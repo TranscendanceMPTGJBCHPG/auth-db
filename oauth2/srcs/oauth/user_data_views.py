@@ -56,8 +56,7 @@ def get_user_counters(request):
 @require_POST
 @csrf_exempt
 def increment_user_counters(request):
-    logging.info(f"Request increment user counters: {request.POST}")
-    game_service_token = request.headers.get('game_service_token')
+    game_service_token = request.POST.get('game_service_token')
 
     if not game_service_token:
         return JsonResponse({'error': 'Token non fourni'}, status=401)
