@@ -53,7 +53,7 @@ def verify_totp(secret, token):
 @require_POST
 @csrf_exempt
 def oauth_login(request):
-    logger.info("Starting oauth_login request")
+    # logger.info("Starting oauth_login request")
     temp_jwt = request.POST.get('temp_token')
 
     if not temp_jwt:
@@ -116,7 +116,7 @@ def oauth_login(request):
 @require_POST
 @csrf_exempt
 def verify_2fa(request):
-    logger.info("Starting 2FA verification")
+    # logger.info("Starting 2FA verification")
     totp_token = request.POST.get('totp_token')
     temp_jwt = request.POST.get('temp_token')
 
@@ -223,7 +223,7 @@ def authfortytwo(request):
         host = request.META.get('HTTP_HOST')
         redirect_uri = f'https://{host}:7777/auth/authfortytwo'
 
-        logger.info(f"Redirect URI: {redirect_uri}")
+        # logger.info(f"Redirect URI: {redirect_uri}")
 
         ft_token_data = {
             'grant_type': 'authorization_code',

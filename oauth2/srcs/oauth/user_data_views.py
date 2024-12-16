@@ -49,7 +49,7 @@ def get_user_counters(request):
         return JsonResponse({'error': 'User not found'}, status=404)
 
     except Exception as e:
-        logger.error(f"Error in get_user_counters: {str(e)}")
+        # logger.error(f"Error in get_user_counters: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -115,7 +115,7 @@ def increment_user_counters(request):
         return JsonResponse({'error': 'User not found'}, status=404)
 
     except Exception as e:
-        logger.error(f"Error in increment_user_counters: {str(e)}")
+        # logger.error(f"Error in increment_user_counters: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
     
 
@@ -147,9 +147,9 @@ def reset(request):
         return JsonResponse({'status': 'success'}, status=200)
 
     except User.DoesNotExist:
-        logger.error(f"User not found for deletion: {username}")
+        # logger.error(f"User not found for deletion: {username}")
         return JsonResponse({'error': 'User not found'}, status=404)
         
     except Exception as e:
-        logger.error(f"Error in reset: {str(e)}")
+        # logger.error(f"Error in reset: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
