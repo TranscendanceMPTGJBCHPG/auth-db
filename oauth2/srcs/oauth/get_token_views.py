@@ -16,14 +16,24 @@ logger = logging.getLogger(__name__)
 @require_GET
 @csrf_exempt
 def get_guest_token(request):
-    logging.info("get_guest_token")
+    
+    if not hasattr(get_guest_token, '_counter'):
+        get_guest_token._counter = 0
+    
+    # Incrémenter le compteur
+    get_guest_token._counter += 1
+    
+    # logging.info("get_guest_token")
     now = datetime.now(pytz.utc)
     expiration_time = now + timedelta(days=1)
     payload = {
-        'username': 'guest',
+        'username': f'guest{get_guest_token._counter}',
         'email': None,
         'image_link': None,
         'exp': int(expiration_time.timestamp())
     }
     encoded_jwt = jwt.encode(payload, os.getenv('JWT_SECRET_KEY'), algorithm='HS256')
+    
+    logging.info(f"Generated username for guest: {payload['username']}")
+    
     return JsonResponse({'access_token': encoded_jwt}, status=200)
